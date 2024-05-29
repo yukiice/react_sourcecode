@@ -1,13 +1,16 @@
 const yukiice = {
     createElement,
+    render
 }
 const element = yukiice.createElement(
         'h1',
         {id: 'foo'},
         'Hello',
         yukiice.createElement('span', null, 'world')
-    ) //  生成的结构为 <h1 id="foo"> Hello <span> world </span> < /h1>
-
+) //  生成的结构为 <h1 id="foo"> Hello <span> world </span> < /h1>
+const container = document.getElementById('root')
+yukiice.render(element,container)
+// 生成的element对象如下
 function createElement(type, props, ...children) {
     return {
         type,  // 元素的类型，为字符串或者函数
@@ -23,7 +26,6 @@ function createElement(type, props, ...children) {
         }
     }
 }
-
 function createTextElement(text) {
     return {
         type: 'TEXT_ELEMENT',  // 表示该元素是一个文本节点，是一个特殊的元素
@@ -32,6 +34,22 @@ function createTextElement(text) {
             children: []  // 文本节点没有子节点，所以是一个空数组
         }
     }
+}
+
+// 生成的render函数如下
+function render(element,container){
+    const dom = element.type === 'TEXT_ELEMENT'?document.createTextNode(''):document.createElement(element.type)  // 这里需要对文本元素做处理，在 DOM 结构中，文本内容不能直接作为元素节点。如果元素类型是文本，我们需要创建一个文本节点而不是常规节点
+    const isProperty = key => key !== 'children'  // 判断key是否是children
+    Object.keys(element.props)  // 获取元素的所有属性
+        .filter(isProperty)  // 过滤掉children属性
+        .forEach(name => {
+            dom[name] = element.props[name]  // 将元素的属性赋值给DOM节点
+        }
+    )
+    element.props.children.forEach(child =>  // 遍历子元素
+        render(child,dom)  // 递归渲染子元素
+    )
+    container.appendChild(dom)  // 将DOM节点添加到容器中
 }
 
 
