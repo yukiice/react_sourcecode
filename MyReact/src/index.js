@@ -52,6 +52,21 @@ function render(element,container){
     container.appendChild(dom)  // 将DOM节点添加到容器中
 }
 
+// 构建调度器
+let nextUnitOfWork = null
+function workLoop(deadLine){
+    let shouldYield = false
+    while(nextUnitOfWork && !shouldYield){
+        nextUnitOfWork = performUnitOfWork(nextUnitOfWork)
+        shouldYield = deadLine.timeRemaining() < 1
+    }
+    requestIdleCallback(workLoop)
+}
+requestIdleCallback(workLoop)
+function performUnitOfWork(nextUnitOfWork){
+    // TODO
+}
+
 
 
 
