@@ -48,21 +48,51 @@ function createDom(fiber){ // fiber代表了一个工作单元，是一个对象
     )
     return dom; // 这行代码返回创建的DOM节点
 }
-
+/*
+目的：此函数标志着渲染阶段的结束，开始将虚拟DOM的变更应用到实际DOM上。它首先调用commitWork来递归地处理所有需要更新的Fiber节点，然后清空wipRoot，表明当前的渲染任务已经完成。
+* */
+function commitRoot(){
+    // 待办事项，将模式（modes，可能是某些react的特性，如concurrent mode）应用到dom
+    commitWork(wipRoot.child) // 开始提交工作，从wipRoot的child开始提交
+    wipRoot = null // 提交完根节点后，将wipRoot置为null，表示没有下一个工作单元了，当前渲染周期已经完成
+}
+/*
+目的：递归地将Fiber树的变更应用到DOM树上，包括添加、更新或删除DOM元素。
+逻辑：
+首先，通过检查fiber是否为空来决定是否继续递归。如果为空，则返回，结束当前分支的处理。
+接着，获取当前Fiber节点的父节点的DOM元素（domParent），并尝试将当前Fiber节点的DOM（fiber.dom）添加到该父节点中。注意，这里的appendChild调用在原始代码中缺少了参数，正确的调用应该是domParent.appendChild(fiber.dom)。
+之后，分别递归调用commitWork处理当前Fiber的子节点和兄弟节点，确保整个子树都被正确地处理。
+* */
+function commitWork(fiber){
+    if(!fiber){
+        // fiber节点为null，表示已经提交完所有工作了，没有下一个工作单元了，渲染流程结束
+        return
+    }
+    const domParent = fiber.parent.dom  // 获取父节点的DOM节点
+    domParent.appendChild(fiber.dom) // 将当前fiber节点的DOM节点添加到父节点的DOM节点中
+    commitWork(fiber.child) // 递归提交子节点
+    commitWork(fiber.sibling) // 递归提交兄弟节点
+}
 function render(element,container){ // element是一个react元素，container是一个DOM节点
-    nextUnitOfWork = {  // 初始化下一个工作单元
+    wipRoot = {  // 初始化下一个工作单元
         dom: container,  // 将dom节点挂载到react元素上
         props: {children: [element]}  // 元素的属性，表示当前工作单元的子元素是element
     }
+    nextUnitOfWork = wipRoot  // 将刚创建的工作单元赋值给下一个工作单元，在这个渲染流程中，nextUnitOfWork是一个全局(或在渲染上下文中)维护的指针，指向当前需要执行的下一个Fiber节点，初始化他的wipRoot代表渲染流程将从此Fiber节点开始执行
+    requestIdleCallback(workLoop)
 }
 // 构建调度器
 let nextUnitOfWork = null // 下一个待处理的工作单元。可以是一个react元素，也可以是一个函数组件等
+let wipRoot = null  // 正在工作的fiber节点
 function workLoop(deadLine){  // 这里做了一个循环，用于在浏览器空闲时间时执行任务
 
     let shouldYield = false  // 是否需要让出控制权，如果shouldYield为true，表示需要让出控制权
     while(nextUnitOfWork && !shouldYield){  // 再有待处理的工作单元，而且不需要让出控制权时，执行任务
         nextUnitOfWork = performUnitOfWork(nextUnitOfWork) // 执行任务
         shouldYield = deadLine.timeRemaining() < 1 // 判断浏览器的空闲时间是否不足1ms，如果是，就需要让出控制权
+    }
+    if (!nextUnitOfWork && wipRoot){  // 这里意味着没有下一个待处理的工作单元(fiber节点)，这意味着所有的工作单元都已经完成，可以提交根节点
+        commitRoot()
     }
     requestIdleCallback(workLoop) // 让浏览器在空闲时间执行workLoop
 }
@@ -72,9 +102,9 @@ function performUnitOfWork(fiber){
     if (!fiber.dom){ // 判断是否存在dom节点
         fiber.dom = createDom(fiber) // 不存在则调用createDom函数创建dom节点，并且赋值给fiber.dom
     }
-    if (fiber.parent){ // 判断是否存在父节点
-        fiber.parent.dom.appendChild(fiber.dom) // 将fiber.dom添加到父节点的dom节点中
-    }
+    // if (fiber.parent){ // 判断是否存在父节点
+    //     fiber.parent.dom.appendChild(fiber.dom) // 将fiber.dom添加到父节点的dom节点中
+    // }
     const elements = fiber.props.children  // 获取fiber的子元素
     let index = 0
     let prevSibling = null
