@@ -54,7 +54,8 @@ function createDom(fiber){ // fiber代表了一个工作单元，是一个对象
 function commitRoot(){
     // 待办事项，将模式（modes，可能是某些react的特性，如concurrent mode）应用到dom
     commitWork(wipRoot.child) // 开始提交工作，从wipRoot的child开始提交
-    wipRoot = null // 提交完根节点后，将wipRoot置为null，表示没有下一个工作单元了，当前渲染周期已经完成
+    currentRoot = wipRoot // currentRoot代表了当前已经提交到DOM上的fiber树的根，wipeRoot则代表了正在构建或更新但尚未提交的新版本的fiber树的根
+    wipRoot = null // 提交完根节点后，将wipRoot置为null，表示没有下一个工作单元了，当前渲染周期已经完成，这里清空了wipRoot
 }
 /*
 目的：递归地将Fiber树的变更应用到DOM树上，包括添加、更新或删除DOM元素。
@@ -76,13 +77,18 @@ function commitWork(fiber){
 function render(element,container){ // element是一个react元素，container是一个DOM节点
     wipRoot = {  // 初始化下一个工作单元
         dom: container,  // 将dom节点挂载到react元素上
-        props: {children: [element]}  // 元素的属性，表示当前工作单元的子元素是element
+        props: {children: [element]},  // 元素的属性，表示当前工作单元的子元素是elemen
+        // alternate 本质是一个指针，指向当前fiber节点对应的上一次渲染周期中的fiber节点，用于连接两个连续渲染周期中对应fiber节点的桥梁，用于实现高效的dom更新策略、支持并发渲染以及优化
+        // 主要用于比较和复用，在开始新一个渲染周期时，框架会新创建一个fiber树（wipRoot），但是alternate属性就指向了上一轮的fiber树（currentRoot），这样做的目的是为了可以在新的渲染过程中与之前的fiber树做比较，找出变化最小的变更集，较少实际dom操作，提高性能
+        // 同时alternate可以记住每个fiber节点的前一个状态，使得中断和恢复成为可能，甚至在必要时候可以回滚到之前的稳定状态
+        alternate:currentRoot
     }
     nextUnitOfWork = wipRoot  // 将刚创建的工作单元赋值给下一个工作单元，在这个渲染流程中，nextUnitOfWork是一个全局(或在渲染上下文中)维护的指针，指向当前需要执行的下一个Fiber节点，初始化他的wipRoot代表渲染流程将从此Fiber节点开始执行
     requestIdleCallback(workLoop)
 }
 // 构建调度器
 let nextUnitOfWork = null // 下一个待处理的工作单元。可以是一个react元素，也可以是一个函数组件等
+let currentRoot = null
 let wipRoot = null  // 正在工作的fiber节点
 function workLoop(deadLine){  // 这里做了一个循环，用于在浏览器空闲时间时执行任务
 
@@ -102,13 +108,31 @@ function performUnitOfWork(fiber){
     if (!fiber.dom){ // 判断是否存在dom节点
         fiber.dom = createDom(fiber) // 不存在则调用createDom函数创建dom节点，并且赋值给fiber.dom
     }
-    // if (fiber.parent){ // 判断是否存在父节点
-    //     fiber.parent.dom.appendChild(fiber.dom) // 将fiber.dom添加到父节点的dom节点中
-    // }
     const elements = fiber.props.children  // 获取fiber的子元素
+    reconcileChildren(fiber,elements)
+
+    // 判断是否有子节点
+    if (fiber.child){
+        // 如果有，则返回第一个子节点，并且作为下一个待处理的工作单元
+        return fiber.child
+    }
+    let nextFiber = fiber // 下一个待处理的工作单元
+    // 在fiber节点没有子节点的情况下，寻找下一个待处理的工作单元
+    while (nextFiber){
+        // 判断是否有兄弟节点
+        if (nextFiber.sibling){
+            // 有的话返回兄弟节点，并作为下一个待处理的工作单元
+            return nextFiber.sibling
+        }
+        // 向上回溯，寻找父节点的兄弟节点，作为下一个待处理的工作单元
+        nextFiber = nextFiber.parent
+    }
+}
+
+function reconcileChildren(wipFiber,elements){
     let index = 0
-    let prevSibling = null
-    while (index  < elements.length){ // 遍历每一个子元素
+    let oblFiber = wipFiber.alternate && wipFiber.alternate.child
+    while (index  < elements.length || oblFiber !== null){ // 遍历每一个子元素
         const element  = elements[index]
         // 为没一个子元素创建一个fiber节点
         const newFiber ={
@@ -129,24 +153,7 @@ function performUnitOfWork(fiber){
         prevSibling = newFiber
         index++
     }
-    // 判断是否有子节点
-    if (fiber.child){
-        // 如果有，则返回第一个子节点，并且作为下一个待处理的工作单元
-        return fiber.child
-    }
-    let nextFiber = fiber // 下一个待处理的工作单元
-    // 在fiber节点没有子节点的情况下，寻找下一个待处理的工作单元
-    while (nextFiber){
-        // 判断是否有兄弟节点
-        if (nextFiber.sibling){
-            // 有的话返回兄弟节点，并作为下一个待处理的工作单元
-            return nextFiber.sibling
-        }
-        // 向上回溯，寻找父节点的兄弟节点，作为下一个待处理的工作单元
-        nextFiber = nextFiber.parent
-    }
 }
-
 
 
 
